@@ -1,0 +1,14 @@
+# Eleven Labs Configuration
+elevenlabs.api.key=sk_aaf926d6b6703e7af258941330f270d1a31fff5a6c1aea93
+elevenlabs.conversation.id=HQ5MF3r34mOf8XCp0HnE
+
+# Server Configuration
+server.port=8080
+
+# Logging Configuration
+logging.level.org.springframework=DEBUG
+logging.level.com.jobreadyprogrammer=DEBUG
+
+
+
+
