@@ -1,0 +1,282 @@
+package com.jobreadyprogrammer;
+
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import java.net.URI;
+import java.util.Map;
+import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.handshake.ServerHandshake;
+import javax.sound.sampled.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.util.Base64;
+import java.util.function.Consumer;
+
+@Service
+public class ElevenLabsClient {
+
+    private final RestTemplate restTemplate;
+    private final String apiKey;
+    private final String agentId;
+    private WebSocketClient webSocketClient;
+    private String twilioSessionId;
+    private Consumer<String> messageHandler;
+
+    public ElevenLabsClient() {
+        this.restTemplate = new RestTemplate();
+        this.apiKey = "sk_aaf926d6b6703e7af258941330f270d1a31fff5a6c1aea93";
+        this.agentId = "iHxgOQJEAn7ZJurTcZ1y";
+    }
+
+    public String getSignedUrl() {
+        String url = "https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=" + agentId;
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("xi-api-key", apiKey);
+
+        System.out.println("Fetching signed URL from: " + url);
+        
+        // Fix: Use exchange with HttpEntity to properly include headers
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+        
+        System.out.println("Signed URL response status: " + response.getStatusCode());
+        System.out.println("Signed URL response body: " + response.getBody());
+
+        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+            Map<String, String> body = response.getBody();
+            return body.get("signed_url");
+        } else {
+            throw new RuntimeException("Failed to get signed URL: " + response.getStatusCode());
+        }
+    }
+
+    public void connectToWebSocket() throws Exception {
+        String signedUrl = getSignedUrl();
+        if (signedUrl == null || signedUrl.isEmpty()) {
+            throw new RuntimeException("Failed to get a valid signed URL");
+        }
+        
+        System.out.println("Connecting to WebSocket with signed URL: " + signedUrl);
+
+        // Close any existing connection
+        if (webSocketClient != null && webSocketClient.isOpen()) {
+            webSocketClient.close();
+        }
+
+        webSocketClient = new WebSocketClient(new URI(signedUrl)) {
+            @Override
+            public void onOpen(ServerHandshake handshake) {
+                System.out.println("WebSocket connection opened successfully");
+            }
+
+            @Override
+            public void onMessage(String message) {
+                System.out.println("Received from ElevenLabs: " + (message.length() > 100 ? message.substring(0, 100) + "..." : message));
+                if (messageHandler != null) {
+                    messageHandler.accept(message);
+                } else {
+                    System.err.println("No message handler registered to process ElevenLabs response");
+                }
+            }
+
+            @Override
+            public void onClose(int code, String reason, boolean remote) {
+                System.out.println("WebSocket closed with code: " + code + ", reason: " + reason + ", remote: " + remote);
+                if (code == 1006 || code == 403) {
+                    try {
+                        System.out.println("Attempting to reconnect after close...");
+                        Thread.sleep(2000); // Add delay before reconnecting
+                        connectToWebSocket();
+                    } catch (Exception e) {
+                        System.err.println("Reconnection failed: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+            @Override
+            public void onError(Exception ex) {
+                System.err.println("WebSocket error: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        };
+        
+        try {
+            System.out.println("Attempting to connect to ElevenLabs WebSocket...");
+            webSocketClient.connectBlocking(); // Use blocking connection to ensure it's ready
+            System.out.println("Connection status: " + (webSocketClient.isOpen() ? "OPEN" : "CLOSED"));
+        } catch (Exception e) {
+            System.err.println("Failed to connect to ElevenLabs WebSocket: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    public void addMessageHandler(Consumer<String> handler) {
+        this.messageHandler = handler;
+        System.out.println("Message handler registered: " + (handler != null));
+    }
+
+    public WebSocketClient getWebSocketClient() {
+        return webSocketClient;
+    }
+
+    public String sendAudioToAgent(String audioData, String sessionId) {
+        this.twilioSessionId = sessionId;
+        
+        // Better connection handling
+        if (webSocketClient == null || !webSocketClient.isOpen()) {
+            System.err.println("ElevenLabs WebSocket client is not open, attempting to reconnect...");
+            try {
+                connectToWebSocket();
+            } catch (Exception e) {
+                System.err.println("Failed to reconnect: " + e.getMessage());
+                e.printStackTrace();
+                return null;
+            }
+        }
+        
+        try {
+            if (audioData == null || audioData.isEmpty()) {
+                System.err.println("Received empty audio data for session: " + sessionId);
+                return null;
+            }
+            
+            // Convert μ-law to WAV
+            byte[] wavData = convertMulawToWav(audioData);
+            
+            // Send the WAV data to ElevenLabs (base64-encoded)
+            String encodedWav = Base64.getEncoder().encodeToString(wavData);
+            System.out.println("Sending audio to ElevenLabs: length=" + encodedWav.length() + " bytes");
+            
+            if (!webSocketClient.isOpen()) {
+                System.err.println("WebSocket connection was lost before sending audio");
+                return null;
+            }
+            
+            webSocketClient.send(encodedWav);
+            System.out.println("Audio data sent successfully to ElevenLabs");
+            
+            // Note: The response will be handled by the messageHandler
+            return "success"; // Return success indicator
+        } catch (Exception e) {
+            System.err.println("Failed to convert and send audio: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public void closeWebSocket() {
+        if (webSocketClient != null) {
+            System.out.println("Closing ElevenLabs WebSocket connection");
+            webSocketClient.close();
+            webSocketClient = null;
+        }
+    }
+
+    private byte[] convertMulawToWav(String base64Mulaw) throws Exception {
+        try {
+            byte[] mulawData = Base64.getDecoder().decode(base64Mulaw);
+            System.out.println("Decoded μ-law audio length: " + mulawData.length + " bytes");
+            
+            AudioFormat mulawFormat = new AudioFormat(
+                AudioFormat.Encoding.ULAW,
+                8000.0f,
+                8,
+                1,
+                1,
+                8000.0f,
+                false
+            );
+            
+            AudioInputStream mulawStream = new AudioInputStream(
+                new ByteArrayInputStream(mulawData),
+                mulawFormat,
+                mulawData.length
+            );
+            
+            AudioFormat pcmFormat = new AudioFormat(
+                AudioFormat.Encoding.PCM_SIGNED,
+                8000.0f,
+                16,
+                1,
+                2,
+                8000.0f,
+                false
+            );
+            
+            AudioInputStream pcmStream = AudioSystem.getAudioInputStream(pcmFormat, mulawStream);
+            ByteArrayOutputStream wavOutput = new ByteArrayOutputStream();
+            AudioSystem.write(pcmStream, AudioFileFormat.Type.WAVE, wavOutput);
+            
+            byte[] result = wavOutput.toByteArray();
+            System.out.println("Converted WAV audio length: " + result.length + " bytes");
+            return result;
+        } catch (Exception e) {
+            System.err.println("Error converting μ-law to WAV: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    private byte[] convertWavToMulaw(byte[] wavData) throws Exception {
+        try {
+            System.out.println("Converting WAV to μ-law, input length: " + wavData.length + " bytes");
+            
+            AudioInputStream wavStream = AudioSystem.getAudioInputStream(new ByteArrayInputStream(wavData));
+            System.out.println("WAV format: " + wavStream.getFormat());
+            
+            AudioFormat mulawFormat = new AudioFormat(
+                AudioFormat.Encoding.ULAW,
+                8000.0f,
+                8,
+                1,
+                1,
+                8000.0f,
+                false
+            );
+            
+            AudioInputStream mulawStream = AudioSystem.getAudioInputStream(mulawFormat, wavStream);
+            ByteArrayOutputStream mulawOutput = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            
+            while ((bytesRead = mulawStream.read(buffer)) != -1) {
+                mulawOutput.write(buffer, 0, bytesRead);
+            }
+            
+            byte[] result = mulawOutput.toByteArray();
+            System.out.println("Converted μ-law audio length: " + result.length + " bytes");
+            return result;
+        } catch (Exception e) {
+            System.err.println("Error converting WAV to μ-law: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    public String processAgentResponse(String message) {
+        try {
+            System.out.println("Processing agent response, length: " + message.length() + " characters");
+            
+            // Assuming the message is base64-encoded WAV audio
+            byte[] audioData = Base64.getDecoder().decode(message);
+            System.out.println("Decoded audio data length: " + audioData.length + " bytes");
+            
+            // Convert WAV to μ-law for Twilio
+            byte[] mulawData = convertWavToMulaw(audioData);
+            String encodedMulaw = Base64.getEncoder().encodeToString(mulawData);
+            
+            System.out.println("Processed response for Twilio, length: " + encodedMulaw.length() + " characters");
+            return encodedMulaw;
+        } catch (Exception e) {
+            System.err.println("Failed to process agent response: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+}
