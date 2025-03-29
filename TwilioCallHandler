@@ -1,0 +1,20 @@
+package com.jobreadyprogrammer;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class TwilioCallHandler {
+
+    public static void main(String[] args) {
+        // Log the Java version
+        System.out.println("Java version: " + System.getProperty("java.version"));
+
+        // Log the Jackson version
+        System.out.println("Jackson version: " + JsonFactory.class.getPackage().getImplementationVersion());
+
+        // Start the Spring Boot application
+        SpringApplication.run(TwilioCallHandler.class, args);
+    }
+}
