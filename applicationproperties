@@ -1,7 +1,7 @@
-elevenlabs.api.key=sk_259930e83ede8e2d55ea1533b1a0dcce026ec30436081ba6
-elevenlabs.agent.id=rIUcsBELXCUpNWDIkdsY
+elevenlabs.api.key=
+elevenlabs.agent.id=
 server.port=8080
-elevenlabs.webhook.secret=wsec_3aeb139eb018b81ae8fdce16c4f8c275f95a06095daf771d425c0613e67c126c
+elevenlabs.webhook.secret=
 
 
 
