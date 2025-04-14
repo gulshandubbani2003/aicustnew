@@ -1,13 +1,7 @@
-# Eleven Labs Configuration
-elevenlabs.api.key=sk_aaf926d6b6703e7af258941330f270d1a31fff5a6c1aea93
-elevenlabs.conversation.id=HQ5MF3r34mOf8XCp0HnE
-
-# Server Configuration
+elevenlabs.api.key=sk_259930e83ede8e2d55ea1533b1a0dcce026ec30436081ba6
+elevenlabs.agent.id=rIUcsBELXCUpNWDIkdsY
 server.port=8080
-
-# Logging Configuration
-logging.level.org.springframework=DEBUG
-logging.level.com.jobreadyprogrammer=DEBUG
+elevenlabs.webhook.secret=wsec_3aeb139eb018b81ae8fdce16c4f8c275f95a06095daf771d425c0613e67c126c
 
 
 
