@@ -3,7 +3,6 @@ package com.jobreadyprogrammer;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -14,9 +13,7 @@ import java.util.Collections;
 import java.util.Properties;
 
 public class KafkaConsumerExample {
-
     public static void main(String[] args) {
-        // Kafka consumer configuration
         Properties props = new Properties();
         props.put("bootstrap.servers", "localhost:9092");
         props.put("group.id", "group1");
@@ -26,20 +23,16 @@ public class KafkaConsumerExample {
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singletonList("elevenlabs-topic"));
 
-        // MongoDB configuration
         MongoClient mongoClient = MongoClients.create("mongodb://localhost:27017");
-        MongoDatabase database = mongoClient.getDatabase("elevenlabs_db");
-        MongoCollection<Document> collection = database.getCollection("call_conversations");
+        MongoCollection<Document> collection = mongoClient.getDatabase("elevenlabs_db").getCollection("call_conversations");
 
-        // Consume messages and store in MongoDB
         try {
             while (true) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
                 for (ConsumerRecord<String, String> record : records) {
-                    System.out.printf("Consumed record with key %s and value %s%n", record.key(), record.value());
-                    Document doc = new Document("key", record.key())
-                            .append("value", record.value())
-                            .append("timestamp", new java.util.Date().toString());
+                    System.out.println("Consumed: " + record.value());
+                    Document doc = Document.parse(record.value());
+                    doc.append("timestamp", new java.util.Date().toString());
                     collection.insertOne(doc);
                 }
             }
